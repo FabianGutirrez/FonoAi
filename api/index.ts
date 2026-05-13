@@ -40,7 +40,7 @@ app.post("/api/transcribe", (req, res, next) => {
     console.log("Servidor: Iniciando proceso de transcripción");
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({ 
-      model: "gemini-1.5-flash-latest",
+      model: "gemini-2.0-flash",
     });
 
     const transcriptionPrompt = req.body.prompt || "Transcribe este video exactamente.";
