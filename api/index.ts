@@ -39,10 +39,7 @@ app.post("/api/transcribe", (req, res, next) => {
 
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({ 
-      model: "gemini-1.5-flash",
-      generationConfig: {
-        maxOutputTokens: 2048,
-      }
+      model: "gemini-1.5-flash-latest",
     });
 
     const transcriptionPrompt = req.body.prompt || "Transcribe este video exactamente.";
@@ -94,18 +91,18 @@ app.post("/api/transcribe", (req, res, next) => {
     console.log("Servidor: Enviando a Gemini...");
     try {
       const result = await model.generateContent([
-        { text: transcriptionPrompt },
+        transcriptionPrompt,
         videoPart
       ]);
       const response = await result.response;
       const text = response.text();
       console.log("Servidor: Respuesta recibida de Gemini.");
       return res.json({ text });
-    } catch (geminiError) {
+    } catch (geminiError: any) {
       console.error("Error directo de Gemini API:", geminiError);
       return res.status(400).json({ 
         error: "Error en la API de Gemini",
-        details: geminiError instanceof Error ? geminiError.message : String(geminiError)
+        details: geminiError?.message || String(geminiError)
       });
     }
   } catch (error) {
@@ -132,7 +129,7 @@ app.post("/api/analyze", async (req, res) => {
     }
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
 
     const result = await model.generateContent(prompt);
     const response = await result.response;
