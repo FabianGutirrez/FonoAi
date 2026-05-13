@@ -19,7 +19,14 @@ app.get("/api/health", (req, res) => {
 });
 
 // Transcription Endpoint
-app.post("/api/transcribe", upload.single("video"), async (req: any, res: any) => {
+app.post("/api/transcribe", (req, res, next) => {
+  const contentType = req.headers['content-type'] || '';
+  if (contentType.includes('multipart/form-data')) {
+    upload.single("video")(req, res, next);
+  } else {
+    next();
+  }
+}, async (req: any, res: any) => {
   try {
     const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY || process.env.GOOGLE_API_KEY;
     
@@ -30,57 +37,50 @@ app.post("/api/transcribe", upload.single("video"), async (req: any, res: any) =
       });
     }
 
-    if (!req.file) {
-      return res.status(400).json({ error: "No se subió ningún archivo de video." });
-    }
-    
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-
     const transcriptionPrompt = req.body.prompt || "Transcribe este video exactamente.";
+    let videoPart;
 
-    // If the client sends a file via Multer (multipart)
     if (req.file) {
-      const videoPart = {
+      // Caso 1: Archivo directo (Multer)
+      videoPart = {
         inlineData: {
           data: req.file.buffer.toString("base64"),
           mimeType: req.file.mimetype
         }
       };
-
-      const result = await model.generateContent([transcriptionPrompt, videoPart]);
-      const response = await result.response;
-      const text = response.text();
-
-      return res.json({ text });
-    }
-
-    // Si el cliente envía una URL (para archivos grandes ya subidos a Firebase Storage)
-    if (req.body.videoUrl) {
+    } else if (req.body.videoUrl) {
+      // Caso 2: URL de Storage
       try {
         const fetchResponse = await fetch(req.body.videoUrl);
-        if (!fetchResponse.ok) throw new Error("No se pudo descargar el video desde la URL proporcionada");
+        if (!fetchResponse.ok) throw new Error(`Error descargando de Storage: ${fetchResponse.status}`);
         
         const arrayBuffer = await fetchResponse.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
         
-        const videoPart = {
+        videoPart = {
           inlineData: {
             data: buffer.toString("base64"),
-            mimeType: req.body.mimeType || "video/mp4" // Por defecto mp4
+            mimeType: req.body.mimeType || "video/mp4"
           }
         };
-
-        const result = await model.generateContent([transcriptionPrompt, videoPart]);
-        const responseText = result.response.text();
-        return res.json({ text: responseText });
       } catch (downloadError) {
         console.error("Error al descargar video de URL:", downloadError);
-        return res.status(400).json({ error: "Error al descargar el video para procesamiento." });
+        return res.status(400).json({ error: "Error al descargar el video desde Firebase Storage." });
       }
+    } else {
+      return res.status(400).json({ 
+        error: "No se proporcionó video de forma procesable por el servidor.",
+        debug: { has_body: !!req.body, body_keys: Object.keys(req.body) }
+      });
     }
 
-    return res.status(400).json({ error: "No se proporcionó video de forma procesable por el servidor." });
+    const result = await model.generateContent([transcriptionPrompt, videoPart]);
+    const response = await result.response;
+    const text = response.text();
+
+    return res.json({ text });
   } catch (error) {
     console.error("Error en la transcripción:", error);
     res.status(400).json({ 
