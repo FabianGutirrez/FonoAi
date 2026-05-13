@@ -1,0 +1,62 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "name", "email"]
+    },
+    "Patient": {
+      "title": "Patient",
+      "description": "Information about a patient",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "age": { "type": "number" },
+        "diagnosis": { "type": "string" },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "createdBy"]
+    },
+    "Evaluation": {
+      "title": "Evaluation",
+      "description": "A clinical speech evaluation record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "patientId": { "type": "string" },
+        "patientName": { "type": "string" },
+        "videoName": { "type": "string" },
+        "transcription": { "type": "string" },
+        "analysis": { "type": "string" },
+        "status": { "type": "string", "enum": ["procesando", "completado", "error"] },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["patientId", "status", "createdBy"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": "User",
+      "description": "Collection of clinical specialists"
+    },
+    "patients/{patientId}": {
+      "schema": "Patient",
+      "description": "Collection of patients"
+    },
+    "evaluations/{evaluationId}": {
+      "schema": "Evaluation",
+      "description": "Records of evaluations and transcriptions"
+    }
+  }
+}

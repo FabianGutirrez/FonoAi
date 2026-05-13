@@ -1,0 +1,6 @@
+{
+  "name": "FonoAI - Asistente de Transcripción Clínica",
+  "description": "Una plataforma para fonoaudiólogos que transcribe grabaciones de pacientes con alta fidelidad y genera análisis clínicos preliminares utilizando IA para identificar patrones de habla y áreas de mejora.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
