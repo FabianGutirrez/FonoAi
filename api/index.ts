@@ -39,18 +39,48 @@ app.post("/api/transcribe", upload.single("video"), async (req: any, res: any) =
 
     const transcriptionPrompt = req.body.prompt || "Transcribe este video exactamente.";
 
-    const videoPart = {
-      inlineData: {
-        data: req.file.buffer.toString("base64"),
-        mimeType: req.file.mimetype
+    // If the client sends a file via Multer (multipart)
+    if (req.file) {
+      const videoPart = {
+        inlineData: {
+          data: req.file.buffer.toString("base64"),
+          mimeType: req.file.mimetype
+        }
+      };
+
+      const result = await model.generateContent([transcriptionPrompt, videoPart]);
+      const response = await result.response;
+      const text = response.text();
+
+      return res.json({ text });
+    }
+
+    // Si el cliente envía una URL (para archivos grandes ya subidos a Firebase Storage)
+    if (req.body.videoUrl) {
+      try {
+        const fetchResponse = await fetch(req.body.videoUrl);
+        if (!fetchResponse.ok) throw new Error("No se pudo descargar el video desde la URL proporcionada");
+        
+        const arrayBuffer = await fetchResponse.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        
+        const videoPart = {
+          inlineData: {
+            data: buffer.toString("base64"),
+            mimeType: req.body.mimeType || "video/mp4" // Por defecto mp4
+          }
+        };
+
+        const result = await model.generateContent([transcriptionPrompt, videoPart]);
+        const responseText = result.response.text();
+        return res.json({ text: responseText });
+      } catch (downloadError) {
+        console.error("Error al descargar video de URL:", downloadError);
+        return res.status(400).json({ error: "Error al descargar el video para procesamiento." });
       }
-    };
+    }
 
-    const result = await model.generateContent([transcriptionPrompt, videoPart]);
-    const response = await result.response;
-    const text = response.text();
-
-    res.json({ text });
+    return res.status(400).json({ error: "No se proporcionó video de forma procesable por el servidor." });
   } catch (error) {
     console.error("Error en la transcripción:", error);
     res.status(400).json({ 

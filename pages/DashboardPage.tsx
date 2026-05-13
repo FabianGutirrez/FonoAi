@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { auth } from '../services/firebase';
-import { Evaluation, EvaluationStatus, User } from '../types';
+import { Evaluation, EvaluationStatus, Patient, User } from '../types';
 import { getEvaluations, getPatients, deleteEvaluation } from '../services/firestoreService';
 import { generateClinicalPDF } from '../lib/pdfGenerator';
 

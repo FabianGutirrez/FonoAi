@@ -16,6 +16,8 @@ import { EvaluationStatus } from '../types';
 import { transcribeVideo, getClinicalAnalysis } from '../services/geminiService';
 import { saveEvaluation, getPatients } from '../services/firestoreService';
 import FileUpload from '../components/FileUpload';
+import { firebaseStorage } from '../services/firebase';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 import { generateClinicalPDF } from '../lib/pdfGenerator';
 
@@ -82,8 +84,20 @@ const NewEvaluationPage: React.FC<NewEvaluationPageProps> = ({ user }) => {
         setAnalysis('');
 
         try {
+            let videoInput: File | string = videoFile;
+            
+            // Si el archivo es mayor a 4MB, lo subimos primero a Firebase Storage
+            // para evitar el límite de 4.5MB de Vercel.
+            if (videoFile.size > 4 * 1024 * 1024) {
+                console.log("Archivo grande detectado, subiendo a Firebase Storage...");
+                const storageRef = ref(firebaseStorage, `evaluations/${user.uid}/${Date.now()}_${videoFile.name}`);
+                const uploadResult = await uploadBytes(storageRef, videoFile);
+                videoInput = await getDownloadURL(uploadResult.ref);
+                console.log("Subida completada, URL obtenida:", videoInput);
+            }
+
             // First simulation/transcription
-            const transcriptionResult = await transcribeVideo(videoFile);
+            const transcriptionResult = await transcribeVideo(videoInput, videoFile.type);
             setTranscription(transcriptionResult);
             
             // AI Analysis

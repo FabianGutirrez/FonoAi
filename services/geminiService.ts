@@ -6,27 +6,50 @@
  * 3. Manejar archivos de video de forma más robusta.
  */
 
-export const transcribeVideo = async (file: File): Promise<string> => {
+export const transcribeVideo = async (video: File | string, mimeType?: string): Promise<string> => {
     try {
-        const formData = new FormData();
-        formData.append("video", file);
-        formData.append("prompt", transcriptionPrompt); // Usamos el prompt definido abajo
+        let body;
+        let headers: Record<string, string> = {};
+
+        if (typeof video === 'string') {
+            // Si es una URL (archivo grande ya subido a Storage)
+            body = JSON.stringify({ videoUrl: video, mimeType: mimeType });
+            headers['Content-Type'] = 'application/json';
+        } else {
+            // Si es un archivo (Multer - para archivos pequeños < 4.5MB)
+            body = new FormData();
+            body.append("video", video);
+            body.append("prompt", transcriptionPrompt);
+        }
 
         const response = await fetch("/api/transcribe", {
             method: "POST",
-            body: formData,
+            headers: headers,
+            body: body,
         });
 
         if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || "Error en el servidor al transcribir");
+            const contentType = response.headers.get("content-type");
+            if (contentType && contentType.includes("application/json")) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || "Error en el servidor al transcribir");
+            } else {
+                // Manejo específico del límite de Vercel (413 Payload Too Large)
+                if (response.status === 413) {
+                    throw new Error("El video es demasiado grande para enviarse directo. Intente nuevamente (el sistema detectará el tamaño y usará Storage).");
+                }
+                const textError = await response.text();
+                throw new Error(textError.substring(0, 100) || `Error del servidor (${response.status})`);
+            }
         }
 
         const data = await response.json();
         return data.text;
     } catch (error) {
         console.error("Error in transcribeVideo:", error);
-        throw error;
+        // Ensure we throw a clean error message
+        if (error instanceof Error) throw error;
+        throw new Error(String(error));
     }
 };
 
@@ -43,8 +66,13 @@ export const getClinicalAnalysis = async (transcription: string): Promise<string
         });
 
         if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || "Error en el servidor al analizar");
+            const contentType = response.headers.get("content-type");
+            if (contentType && contentType.includes("application/json")) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || "Error en el servidor al analizar");
+            } else {
+                throw new Error(`Error del servidor al analizar (${response.status})`);
+            }
         }
 
         const data = await response.json();
