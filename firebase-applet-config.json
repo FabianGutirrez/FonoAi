@@ -4,7 +4,7 @@
   "apiKey": "AIzaSyCQDAY-5jyWfdkT1hcMrt1xdqkOwj1buEQ",
   "authDomain": "fonoaudiologico.firebaseapp.com",
   "firestoreDatabaseId": "ai-studio-29516c34-de65-4ab7-8172-b17f765cc109",
-  "storageBucket": "fonoaudiologico.firebasestorage.app",
+  "storageBucket": "fonoaudiologico.appspot.com",
   "messagingSenderId": "707372067610",
   "measurementId": ""
 }
