@@ -37,9 +37,10 @@ app.post("/api/transcribe", (req, res, next) => {
       });
     }
 
+    console.log("Servidor: Iniciando proceso de transcripción");
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({ 
-      model: "gemini-1.5-flash-latest",
+      model: "gemini-1.5-flash",
     });
 
     const transcriptionPrompt = req.body.prompt || "Transcribe este video exactamente.";
@@ -129,7 +130,7 @@ app.post("/api/analyze", async (req, res) => {
     }
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
     const result = await model.generateContent(prompt);
     const response = await result.response;
