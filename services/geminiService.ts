@@ -6,88 +6,6 @@
  * 3. Manejar archivos de video de forma más robusta.
  */
 
-export const transcribeVideo = async (video: File | string, mimeType?: string): Promise<string> => {
-    try {
-        let body;
-        let headers: Record<string, string> = {};
-
-        if (typeof video === 'string') {
-            // Si es una URL (archivo grande ya subido a Storage)
-            body = JSON.stringify({ 
-                videoUrl: video, 
-                mimeType: mimeType,
-                prompt: transcriptionPrompt 
-            });
-            headers['Content-Type'] = 'application/json';
-        } else {
-            // Si es un archivo (Multer - para archivos pequeños < 4.5MB)
-            body = new FormData();
-            body.append("video", video);
-            body.append("prompt", transcriptionPrompt);
-        }
-
-        const response = await fetch("/api/transcribe", {
-            method: "POST",
-            headers: headers,
-            body: body,
-        });
-
-        if (!response.ok) {
-            const contentType = response.headers.get("content-type");
-            if (contentType && contentType.includes("application/json")) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || "Error en el servidor al transcribir");
-            } else {
-                // Manejo específico del límite de Vercel (413 Payload Too Large)
-                if (response.status === 413) {
-                    throw new Error("El video es demasiado grande para enviarse directo. Intente nuevamente (el sistema detectará el tamaño y usará Storage).");
-                }
-                const textError = await response.text();
-                throw new Error(textError.substring(0, 100) || `Error del servidor (${response.status})`);
-            }
-        }
-
-        const data = await response.json();
-        return data.text;
-    } catch (error) {
-        console.error("Error in transcribeVideo:", error);
-        // Ensure we throw a clean error message
-        if (error instanceof Error) throw error;
-        throw new Error(String(error));
-    }
-};
-
-export const getClinicalAnalysis = async (transcription: string): Promise<string> => {
-    try {
-        const promptWithTranscription = analysisPrompt.replace('%%TRANSCRIPTION%%', transcription);
-        
-        const response = await fetch("/api/analyze", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ prompt: promptWithTranscription }),
-        });
-
-        if (!response.ok) {
-            const contentType = response.headers.get("content-type");
-            if (contentType && contentType.includes("application/json")) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || "Error en el servidor al analizar");
-            } else {
-                throw new Error(`Error del servidor al analizar (${response.status})`);
-            }
-        }
-
-        const data = await response.json();
-        return data.text;
-    } catch (error) {
-        console.error("Error in getClinicalAnalysis:", error);
-        return `Hubo un problema con el servicio de IA. Detalles técnicos: ${error instanceof Error ? error.message : 'Error desconocido'}.`;
-    }
-};
-
-
 const transcriptionPrompt = `
 Eres un transcriptor fonoaudiológico especializado en lingüística clínica. Tu función es convertir grabaciones de audio a texto siguiendo un protocolo de "Fidelidad Radical".
 
@@ -96,7 +14,7 @@ REGLAS DE ORO:
 2. ERRORES FONÉTICOS: Si el niño o adulto dice "pelo" por "perro", "toche" por "coche" o "andó" por "anduvo", transcribe exactamente la forma errónea.
 3. DISFLUENCIAS: Registra tartamudeos (ej: "p-p-pelota"), repeticiones de sílabas y sonidos de vacilación (eh, mmm, ah).
 4. MARCAS DE CONTEXTO: Si el audio tiene ruidos relevantes (tos, llanto, risa), inclúyelos entre corchetes, ej: [risas].
-5. FORMATO DE SALIDA: Entrega solo la transcripción literal. Si detectas un error gramatical grave que dificulte la lectura, NO lo arregles; mi objetivo es analizar precisamente esos errores.
+5. FORMATO DE SALIDA: Entrega solo la transcripción literal. Si detectas un error gramatical grave que dificultelte la lectura, NO lo arregles; mi objetivo es analizar precisamente esos errores.
 
 OBJETIVO: El texto resultante debe ser un espejo exacto del desempeño verbal del sujeto, permitiendo identificar procesos de simplificación fonológica o agramatismos.
 
@@ -137,3 +55,86 @@ Basado en la transcripción, realiza el siguiente análisis:
 
 Formato de Salida: El informe debe ser claro, profesional y estar estructurado con los títulos en negrita.
 `;
+
+export const transcribeVideo = async (video: File | string, mimeType?: string): Promise<string> => {
+    try {
+        let body;
+        let headers: Record<string, string> = {};
+
+        if (typeof video === 'string') {
+            // Si es una URL (archivo grande ya subido a Storage)
+            body = JSON.stringify({ 
+                videoUrl: video, 
+                mimeType: mimeType,
+                prompt: transcriptionPrompt 
+            });
+            headers['Content-Type'] = 'application/json';
+        } else {
+            // Si es un archivo (Multer - para archivos pequeños < 4.5MB)
+            body = new FormData();
+            body.append("video", video);
+            body.append("prompt", transcriptionPrompt);
+        }
+
+        const response = await fetch("/api/transcribe", {
+            method: "POST",
+            headers: headers,
+            body: body,
+        });
+
+        if (!response.ok) {
+            const contentType = response.headers.get("content-type");
+            if (contentType && contentType.includes("application/json")) {
+                const errorData = await response.json();
+                // Mostramos el detalle específico si viene del servidor
+                const msg = errorData.details ? `${errorData.error}: ${errorData.details}` : (errorData.error || "Error en el servidor");
+                throw new Error(msg);
+            } else {
+                if (response.status === 413) {
+                    throw new Error("El video es demasiado grande para Vercel. Intente con uno más corto.");
+                }
+                const textError = await response.text();
+                throw new Error(`Error ${response.status}: ${textError.substring(0, 100)}`);
+            }
+        }
+
+        const data = await response.json();
+        return data.text;
+    } catch (error) {
+        console.error("Error in transcribeVideo:", error);
+        // Ensure we throw a clean error message
+        if (error instanceof Error) throw error;
+        throw new Error(String(error));
+    }
+};
+
+export const getClinicalAnalysis = async (transcription: string): Promise<string> => {
+    try {
+        const promptWithTranscription = analysisPrompt.replace('%%TRANSCRIPTION%%', transcription);
+        
+        const response = await fetch("/api/analyze", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ prompt: promptWithTranscription }),
+        });
+
+        if (!response.ok) {
+            const contentType = response.headers.get("content-type");
+            if (contentType && contentType.includes("application/json")) {
+                const errorData = await response.json();
+                const msg = errorData.details ? `${errorData.error}: ${errorData.details}` : (errorData.error || "Error al analizar");
+                throw new Error(msg);
+            } else {
+                throw new Error(`Error del servidor al analizar (${response.status})`);
+            }
+        }
+
+        const data = await response.json();
+        return data.text;
+    } catch (error) {
+        console.error("Error in getClinicalAnalysis:", error);
+        return `Hubo un problema con el servicio de IA. Detalles técnicos: ${error instanceof Error ? error.message : 'Error desconocido'}.`;
+    }
+};
