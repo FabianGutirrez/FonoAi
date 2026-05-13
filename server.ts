@@ -54,19 +54,24 @@ async function startServer() {
   // Transcription Endpoint
   app.post("/api/transcribe", (req, res, next) => {
     // Si es multipart, usamos multer. Si no, seguimos (express.json() ya parseó el body)
-    if (req.headers['content-type']?.includes('multipart/form-data')) {
+    const contentType = req.headers['content-type'] || '';
+    if (contentType.includes('multipart/form-data')) {
       upload.single("video")(req, res, next);
     } else {
       next();
     }
   }, async (req, res) => {
     try {
+      console.log("Petición recibida en /api/transcribe");
+      console.log("Content-Type:", req.headers['content-type']);
+      console.log("¿req.file existe?:", !!req.file);
+      console.log("Campos en req.body:", Object.keys(req.body));
+
       const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY || process.env.VITE_GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
       
       if (!apiKey || apiKey === "undefined" || apiKey === "null" || apiKey === "") {
         return res.status(500).json({ 
           error: "Clave de API (GEMINI_API_KEY) no encontrada.",
-          details: "ERROR: El servidor no tiene acceso a la clave. SOLUCIÓN: Pulsa en 'Share' -> 'Publish' para desplegar los Secretos correctamente."
         });
       }
 
@@ -74,7 +79,7 @@ async function startServer() {
       const transcriptionPrompt = req.body.prompt || "Transcribe este video exactamente.";
 
       if (req.file) {
-        console.log("Procesando video desde archivo directo (Multer)");
+        console.log("Caso 1: Multer (archivo directo)");
         videoPart = {
           inlineData: {
             data: req.file.buffer.toString("base64"),
@@ -82,7 +87,7 @@ async function startServer() {
           }
         };
       } else if (req.body.videoUrl) {
-        console.log("Procesando video desde URL de Storage:", req.body.videoUrl);
+        console.log("Caso 2: URL de Storage:", req.body.videoUrl);
         const videoResponse = await fetch(req.body.videoUrl);
         if (!videoResponse.ok) {
           throw new Error(`Error al descargar video de Storage (${videoResponse.status}): ${videoResponse.statusText}`);
@@ -96,9 +101,14 @@ async function startServer() {
           }
         };
       } else {
+        console.error("Error: Ni archivo ni URL detectados en la petición.");
         return res.status(400).json({ 
           error: "No se subió ningún archivo de video ni se proporcionó una URL.",
-          received_body: Object.keys(req.body)
+          debug: {
+            has_body: !!req.body,
+            body_keys: Object.keys(req.body),
+            content_type: req.headers['content-type']
+          }
         });
       }
       
