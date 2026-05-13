@@ -63,21 +63,36 @@ async function startServer() {
         });
       }
 
-      if (!req.file) {
-        return res.status(400).json({ error: "No se subió ningún archivo de video." });
+      let videoPart;
+      const transcriptionPrompt = req.body.prompt || "Transcribe este video exactamente.";
+
+      if (req.file) {
+        videoPart = {
+          inlineData: {
+            data: req.file.buffer.toString("base64"),
+            mimeType: req.file.mimetype
+          }
+        };
+      } else if (req.body.videoUrl) {
+        console.log("Procesando video desde URL:", req.body.videoUrl);
+        const videoResponse = await fetch(req.body.videoUrl);
+        if (!videoResponse.ok) {
+          throw new Error(`Error al descargar video de Storage: ${videoResponse.statusText}`);
+        }
+        
+        const buffer = Buffer.from(await videoResponse.arrayBuffer());
+        videoPart = {
+          inlineData: {
+            data: buffer.toString("base64"),
+            mimeType: req.body.mimeType || "video/mp4"
+          }
+        };
+      } else {
+        return res.status(400).json({ error: "No se subió ningún archivo de video ni se proporcionó una URL." });
       }
       
       const genAI = new GoogleGenerativeAI(apiKey);
       const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-
-      const transcriptionPrompt = req.body.prompt || "Transcribe este video exactamente.";
-
-      const videoPart = {
-        inlineData: {
-          data: req.file.buffer.toString("base64"),
-          mimeType: req.file.mimetype
-        }
-      };
 
       const result = await model.generateContent([transcriptionPrompt, videoPart]);
       const response = await result.response;
