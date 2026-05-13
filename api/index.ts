@@ -38,27 +38,38 @@ app.post("/api/transcribe", (req, res, next) => {
     }
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const model = genAI.getGenerativeModel({ 
+      model: "gemini-1.5-flash",
+      generationConfig: {
+        maxOutputTokens: 2048,
+      }
+    });
+
     const transcriptionPrompt = req.body.prompt || "Transcribe este video exactamente.";
     let videoPart;
 
     if (req.file) {
-      // Caso 1: Archivo directo (Multer)
+      console.log("Servidor: Procesando archivo directo (Multer)");
       videoPart = {
         inlineData: {
           data: req.file.buffer.toString("base64"),
-          mimeType: req.file.mimetype
+          mimeType: req.file.mimetype || "video/mp4"
         }
       };
     } else if (req.body.videoUrl) {
-      // Caso 2: URL de Storage
+      console.log("Servidor: Intentando descargar desde URL:", req.body.videoUrl);
       try {
         const fetchResponse = await fetch(req.body.videoUrl);
-        if (!fetchResponse.ok) throw new Error(`Error descargando de Storage: ${fetchResponse.status}`);
+        if (!fetchResponse.ok) {
+           const fetchErrorText = await fetchResponse.text();
+           throw new Error(`Error descargando de Storage (Status ${fetchResponse.status}): ${fetchErrorText}`);
+        }
         
         const arrayBuffer = await fetchResponse.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
         
+        console.log(`Servidor: Video descargado exitosamente. Tamaño: ${(buffer.length / 1024 / 1024).toFixed(2)} MB`);
+
         videoPart = {
           inlineData: {
             data: buffer.toString("base64"),
@@ -66,25 +77,41 @@ app.post("/api/transcribe", (req, res, next) => {
           }
         };
       } catch (downloadError) {
-        console.error("Error al descargar video de URL:", downloadError);
-        return res.status(400).json({ error: "Error al descargar el video desde Firebase Storage." });
+        console.error("Error crítico al descargar video de URL:", downloadError);
+        return res.status(400).json({ 
+          error: "Error al descargar el video desde Firebase Storage.",
+          details: downloadError instanceof Error ? downloadError.message : String(downloadError)
+        });
       }
     } else {
+      console.error("Servidor: No se detectó ni archivo ni URL.");
       return res.status(400).json({ 
         error: "No se proporcionó video de forma procesable por el servidor.",
         debug: { has_body: !!req.body, body_keys: Object.keys(req.body) }
       });
     }
 
-    const result = await model.generateContent([transcriptionPrompt, videoPart]);
-    const response = await result.response;
-    const text = response.text();
-
-    return res.json({ text });
+    console.log("Servidor: Enviando a Gemini...");
+    try {
+      const result = await model.generateContent([
+        { text: transcriptionPrompt },
+        videoPart
+      ]);
+      const response = await result.response;
+      const text = response.text();
+      console.log("Servidor: Respuesta recibida de Gemini.");
+      return res.json({ text });
+    } catch (geminiError) {
+      console.error("Error directo de Gemini API:", geminiError);
+      return res.status(400).json({ 
+        error: "Error en la API de Gemini",
+        details: geminiError instanceof Error ? geminiError.message : String(geminiError)
+      });
+    }
   } catch (error) {
-    console.error("Error en la transcripción:", error);
-    res.status(400).json({ 
-      error: "Fallo en la comunicación con Gemini",
+    console.error("Error inesperado en /api/transcribe:", error);
+    res.status(500).json({ 
+      error: "Fallo interno en el servidor",
       details: error instanceof Error ? error.message : String(error)
     });
   }
