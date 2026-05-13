@@ -17,7 +17,7 @@ import { transcribeVideo, getClinicalAnalysis } from '../services/geminiService'
 import { saveEvaluation, getPatients } from '../services/firestoreService';
 import FileUpload from '../components/FileUpload';
 import { firebaseStorage } from '../services/firebase';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 
 import { generateClinicalPDF } from '../lib/pdfGenerator';
 
@@ -91,8 +91,25 @@ const NewEvaluationPage: React.FC<NewEvaluationPageProps> = ({ user }) => {
             if (videoFile.size > 4 * 1024 * 1024) {
                 console.log("Archivo grande detectado, subiendo a Firebase Storage...");
                 const storageRef = ref(firebaseStorage, `evaluations/${user.uid}/${Date.now()}_${videoFile.name}`);
-                const uploadResult = await uploadBytes(storageRef, videoFile);
-                videoInput = await getDownloadURL(uploadResult.ref);
+                
+                // Usamos una Promesa para manejar la subida con uploadBytesResumable, que es más estable
+                const uploadPromise = new Promise<string>((resolve, reject) => {
+                    const uploadTask = uploadBytesResumable(storageRef, videoFile);
+                    
+                    uploadTask.on('state_changed', 
+                        null, // Podríamos rastrear el progreso aquí si fuera necesario
+                        (error) => {
+                            console.error("Error en la subida a Storage:", error);
+                            reject(error);
+                        }, 
+                        async () => {
+                            const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+                            resolve(downloadURL);
+                        }
+                    );
+                });
+
+                videoInput = await uploadPromise;
                 console.log("Subida completada, URL obtenida:", videoInput);
             }
 

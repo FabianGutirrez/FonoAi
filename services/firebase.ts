@@ -8,7 +8,7 @@ const app = initializeApp(firebaseConfig);
 
 export const db = getFirestore(app, (firebaseConfig as any).firestoreDatabaseId);
 export const auth = getAuth();
-export const firebaseStorage = getStorage(app);
+export const firebaseStorage = getStorage(app, `gs://${firebaseConfig.storageBucket}`);
 
 // Verification of connection as per instructions
 async function testConnection() {
