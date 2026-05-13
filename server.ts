@@ -52,7 +52,14 @@ async function startServer() {
   });
 
   // Transcription Endpoint
-  app.post("/api/transcribe", upload.single("video"), async (req, res) => {
+  app.post("/api/transcribe", (req, res, next) => {
+    // Si es multipart, usamos multer. Si no, seguimos (express.json() ya parseó el body)
+    if (req.headers['content-type']?.includes('multipart/form-data')) {
+      upload.single("video")(req, res, next);
+    } else {
+      next();
+    }
+  }, async (req, res) => {
     try {
       const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY || process.env.VITE_GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
       
@@ -67,6 +74,7 @@ async function startServer() {
       const transcriptionPrompt = req.body.prompt || "Transcribe este video exactamente.";
 
       if (req.file) {
+        console.log("Procesando video desde archivo directo (Multer)");
         videoPart = {
           inlineData: {
             data: req.file.buffer.toString("base64"),
@@ -74,10 +82,10 @@ async function startServer() {
           }
         };
       } else if (req.body.videoUrl) {
-        console.log("Procesando video desde URL:", req.body.videoUrl);
+        console.log("Procesando video desde URL de Storage:", req.body.videoUrl);
         const videoResponse = await fetch(req.body.videoUrl);
         if (!videoResponse.ok) {
-          throw new Error(`Error al descargar video de Storage: ${videoResponse.statusText}`);
+          throw new Error(`Error al descargar video de Storage (${videoResponse.status}): ${videoResponse.statusText}`);
         }
         
         const buffer = Buffer.from(await videoResponse.arrayBuffer());
@@ -88,7 +96,10 @@ async function startServer() {
           }
         };
       } else {
-        return res.status(400).json({ error: "No se subió ningún archivo de video ni se proporcionó una URL." });
+        return res.status(400).json({ 
+          error: "No se subió ningún archivo de video ni se proporcionó una URL.",
+          received_body: Object.keys(req.body)
+        });
       }
       
       const genAI = new GoogleGenerativeAI(apiKey);

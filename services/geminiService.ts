@@ -13,7 +13,11 @@ export const transcribeVideo = async (video: File | string, mimeType?: string): 
 
         if (typeof video === 'string') {
             // Si es una URL (archivo grande ya subido a Storage)
-            body = JSON.stringify({ videoUrl: video, mimeType: mimeType });
+            body = JSON.stringify({ 
+                videoUrl: video, 
+                mimeType: mimeType,
+                prompt: transcriptionPrompt 
+            });
             headers['Content-Type'] = 'application/json';
         } else {
             // Si es un archivo (Multer - para archivos pequeños < 4.5MB)
@@ -82,6 +86,7 @@ export const getClinicalAnalysis = async (transcription: string): Promise<string
         return `Hubo un problema con el servicio de IA. Detalles técnicos: ${error instanceof Error ? error.message : 'Error desconocido'}.`;
     }
 };
+
 
 const transcriptionPrompt = `
 Eres un transcriptor fonoaudiológico especializado en lingüística clínica. Tu función es convertir grabaciones de audio a texto siguiendo un protocolo de "Fidelidad Radical".
