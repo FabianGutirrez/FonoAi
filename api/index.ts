@@ -5,6 +5,7 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import { promisify } from "util";
+import { Readable } from "stream";
 import ffmpeg from "fluent-ffmpeg";
 import ffmpegPath from "ffmpeg-static";
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -18,9 +19,11 @@ const writeFile = promisify(fs.writeFile);
 const unlink = promisify(fs.unlink);
 const readFile = promisify(fs.readFile);
 
-async function extractAudio(inputPath: string, outputPath: string): Promise<void> {
+async function extractAudio(inputSource: string | Buffer, outputPath: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    ffmpeg(inputPath)
+    const source = typeof inputSource === "string" ? inputSource : Readable.from(inputSource);
+    const command = ffmpeg(source);
+    command
       .toFormat("mp3")
       .audioBitrate("96k")
       .audioChannels(1)
@@ -65,42 +68,57 @@ app.post("/api/transcribe", (req, res, next) => {
       });
     }
 
-    console.log("--- Iniciando Proceso Profesional de Transcripción (File API) ---");
-    let buffer: Buffer;
-    let originalMimeType = "video/mp4";
-
-    if (req.file) {
-      buffer = req.file.buffer;
-      originalMimeType = req.file.mimetype || "video/mp4";
-    } else if (req.body.videoUrl) {
-      console.log("Descargando desde URL externa...");
-      const fetchResponse = await fetch(req.body.videoUrl);
-      if (!fetchResponse.ok) throw new Error("Error bajando de Storage");
-      buffer = Buffer.from(await fetchResponse.arrayBuffer());
-      originalMimeType = req.body.mimeType || "video/mp4";
-    } else {
-      return res.status(400).json({ error: "No se proporcionó video" });
-    }
-
     const tempDir = os.tmpdir();
-    const inPath = path.join(tempDir, `api_in_${Date.now()}${path.extname(originalMimeType) || ".mp4"}`);
-    const outPath = path.join(tempDir, `api_out_${Date.now()}.mp3`);
+    const audioPath = path.join(tempDir, `api_out_${Date.now()}.mp3`);
+    let finalPath = "";
+    let finalMimeType = "";
 
-    await writeFile(inPath, buffer);
-    tempFiles.push(inPath);
-
-    let finalPath = inPath;
-    let finalMimeType = originalMimeType;
-
-    if (originalMimeType.startsWith("video/")) {
-      console.log("Extrayendo audio para optimizar procesamiento...");
+    if (req.body.videoUrl && (req.body.mimeType || "video/mp4").startsWith("video/")) {
+      // PROCESADO PROFESIONAL: No descargamos el video completo, FFmpeg hace streaming.
+      console.log("Vercel Protect: Usando streaming directo para evitar ENOSPC en videos grandes.");
       try {
-        await extractAudio(inPath, outPath);
-        finalPath = outPath;
+        await extractAudio(req.body.videoUrl, audioPath);
+        finalPath = audioPath;
         finalMimeType = "audio/mp3";
-        tempFiles.push(outPath);
-      } catch (e) {
-        console.warn("Fallo FFmpeg, usando video original.");
+        tempFiles.push(audioPath);
+      } catch (streamError) {
+        console.error("Fallo en streaming FFmpeg:", streamError);
+        throw new Error("El video es demasiado grande para procesarlo directamente. El streaming ha fallado.");
+      }
+    } else {
+      // FALLBACK: Para archivos pequeños o subidas directas
+      let buffer: Buffer;
+      let originalMimeType = "video/mp4";
+
+      if (req.file) {
+        buffer = req.file.buffer;
+        originalMimeType = req.file.mimetype || "video/mp4";
+      } else if (req.body.videoUrl) {
+        console.log("Descargando archivo pequeño...");
+        const fetchResponse = await fetch(req.body.videoUrl);
+        if (!fetchResponse.ok) throw new Error("Error bajando de Storage");
+        buffer = Buffer.from(await fetchResponse.arrayBuffer());
+        originalMimeType = req.body.mimeType || "video/mp4";
+      } else {
+        return res.status(400).json({ error: "No se proporcionó video" });
+      }
+
+      const inPath = path.join(tempDir, `api_in_${Date.now()}${path.extname(originalMimeType) || ".mp4"}`);
+      await writeFile(inPath, buffer);
+      tempFiles.push(inPath);
+      finalPath = inPath;
+      finalMimeType = originalMimeType;
+
+      if (originalMimeType.startsWith("video/")) {
+        console.log("Extrayendo audio localmente...");
+        try {
+          await extractAudio(inPath, audioPath);
+          finalPath = audioPath;
+          finalMimeType = "audio/mp3";
+          tempFiles.push(audioPath);
+        } catch (e) {
+          console.warn("Fallo FFmpeg local, usando original.");
+        }
       }
     }
 

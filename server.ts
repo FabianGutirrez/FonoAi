@@ -5,6 +5,7 @@ import cors from "cors";
 import multer from "multer";
 import fs from "fs";
 import os from "os";
+import { Readable } from "stream";
 import { promisify } from "util";
 import ffmpeg from "fluent-ffmpeg";
 import ffmpegPath from "ffmpeg-static";
@@ -21,14 +22,21 @@ const writeFile = promisify(fs.writeFile);
 const unlink = promisify(fs.unlink);
 const readFile = promisify(fs.readFile);
 
-async function extractAudio(inputPath: string, outputPath: string): Promise<void> {
+async function extractAudio(inputSource: string | Buffer, outputPath: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    ffmpeg(inputPath)
+    const input = typeof inputSource === "string" ? inputSource : Readable.from(inputSource);
+    let command = ffmpeg(input);
+    
+    command
       .toFormat("mp3")
       .audioBitrate("96k")
       .audioChannels(1)
+      .on("start", (cmd) => console.log("FFmpeg iniciado:", cmd))
       .on("end", () => resolve())
-      .on("error", (err) => reject(err))
+      .on("error", (err) => {
+        console.error("Error en FFmpeg:", err);
+        reject(err);
+      })
       .save(outputPath);
   });
 }
@@ -68,42 +76,59 @@ async function startServer() {
         return res.status(500).json({ error: "API Key no configurada." });
       }
 
-      let buffer: Buffer;
-      let originalMimeType = "video/mp4";
-
-      if (req.file) {
-        buffer = req.file.buffer;
-        originalMimeType = req.file.mimetype;
-      } else if (req.body.videoUrl) {
-        console.log("Descargando desde URL externa...");
-        const videoResponse = await fetch(req.body.videoUrl);
-        if (!videoResponse.ok) throw new Error("Error descargando video");
-        buffer = Buffer.from(await videoResponse.arrayBuffer());
-        originalMimeType = req.body.mimeType || "video/mp4";
-      } else {
-        return res.status(400).json({ error: "No se encontró video" });
-      }
-
+      // --- DETERMINAR ORIGEN DE PROCESAMIENTO ---
       const tempDir = os.tmpdir();
-      const inputPath = path.join(tempDir, `in_${Date.now()}${path.extname(originalMimeType) || ".mp4"}`);
       const audioPath = path.join(tempDir, `out_${Date.now()}.mp3`);
-      
-      await writeFile(inputPath, buffer);
-      tempFiles.push(inputPath);
+      let finalPath = "";
+      let finalMimeType = "";
 
-      // Decisión inteligente: Si es video, extraemos audio para ahorrar tiempo de subida a la File API
-      let finalPath = inputPath;
-      let finalMimeType = originalMimeType;
-
-      if (originalMimeType.startsWith("video/")) {
-        console.log("Extrayendo audio para optimizar procesamiento...");
+      if (req.body.videoUrl && (req.body.mimeType || "video/mp4").startsWith("video/")) {
+        // CASO ÓPTIMO: Streaming directo desde URL para videos grandes
+        // Esto evita descargar el archivo de 600MB al disco (ENOSPC error fix)
+        console.log("Optimizando video GRANDE mediante streaming directo desde URL...");
         try {
-          await extractAudio(inputPath, audioPath);
+          await extractAudio(req.body.videoUrl, audioPath);
           finalPath = audioPath;
           finalMimeType = "audio/mp3";
           tempFiles.push(audioPath);
         } catch (e) {
-          console.warn("Fallo FFmpeg, usando video original.");
+          console.error("Fallo streaming de FFmpeg:", e);
+          throw new Error("No se pudo procesar el video pesado mediante streaming. Intenta con un archivo más pequeño.");
+        }
+      } else {
+        // CASO FALLBACK: Archivos pequeños o subidas directas via Multer
+        let buffer: Buffer;
+        let originalMimeType = "video/mp4";
+
+        if (req.file) {
+          buffer = req.file.buffer;
+          originalMimeType = req.file.mimetype;
+        } else if (req.body.videoUrl) {
+          console.log("Descargando archivo pequeño para procesamiento local...");
+          const videoResponse = await fetch(req.body.videoUrl);
+          if (!videoResponse.ok) throw new Error("Error descargando video");
+          buffer = Buffer.from(await videoResponse.arrayBuffer());
+          originalMimeType = req.body.mimeType || "video/mp4";
+        } else {
+          return res.status(400).json({ error: "No se encontró video o URL procesable" });
+        }
+
+        const inputPath = path.join(tempDir, `in_${Date.now()}${path.extname(originalMimeType) || ".mp4"}`);
+        await writeFile(inputPath, buffer);
+        tempFiles.push(inputPath);
+        finalPath = inputPath;
+        finalMimeType = originalMimeType;
+
+        if (originalMimeType.startsWith("video/")) {
+          console.log("Extrayendo audio de archivo descargado...");
+          try {
+            await extractAudio(inputPath, audioPath);
+            finalPath = audioPath;
+            finalMimeType = "audio/mp3";
+            tempFiles.push(audioPath);
+          } catch (e) {
+            console.warn("Fallo FFmpeg local, usando original.");
+          }
         }
       }
 
