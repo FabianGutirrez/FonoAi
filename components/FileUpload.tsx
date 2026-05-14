@@ -85,7 +85,10 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFileChange }) => {
                     </p>
                 </div>
 
-                <p className="mt-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-300">Formatos: MP4, MOV, AVI (Habilitado hasta 400MB)</p>
+                <p className="mt-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-300 text-center">
+                    Formatos: MP4, MOV, AVI (Habilitado hasta 1GB)<br/>
+                    <span className="text-blue-400 mt-1 block">Optimización FFmpeg automática activada</span>
+                </p>
                 
                 <input type="file" name="file_upload" className="hidden" accept="video/mp4,video/quicktime,video/x-msvideo" onChange={handleChange} />
             </label>

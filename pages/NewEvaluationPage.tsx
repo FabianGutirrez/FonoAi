@@ -35,6 +35,7 @@ const NewEvaluationPage: React.FC<NewEvaluationPageProps> = ({ user }) => {
     const [analysis, setAnalysis] = useState<string>('');
     const [isFetchingPatients, setIsFetchingPatients] = useState(true);
     const [lastEvaluationId, setLastEvaluationId] = useState<string>('');
+    const [uploadProgress, setUploadProgress] = useState<number>(0);
 
     useEffect(() => {
         const fetchPatients = async () => {
@@ -80,6 +81,7 @@ const NewEvaluationPage: React.FC<NewEvaluationPageProps> = ({ user }) => {
 
         setError('');
         setIsLoading(true);
+        setUploadProgress(0);
         setTranscription('');
         setAnalysis('');
 
@@ -97,7 +99,10 @@ const NewEvaluationPage: React.FC<NewEvaluationPageProps> = ({ user }) => {
                     const uploadTask = uploadBytesResumable(storageRef, videoFile);
                     
                     uploadTask.on('state_changed', 
-                        null, // Podríamos rastrear el progreso aquí si fuera necesario
+                        (snapshot) => {
+                            const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                            setUploadProgress(progress);
+                        },
                         (error) => {
                             console.error("Error en la subida a Storage:", error);
                             reject(error);
@@ -266,7 +271,23 @@ const NewEvaluationPage: React.FC<NewEvaluationPageProps> = ({ user }) => {
                                         <Sparkles className="w-10 h-10 text-white" />
                                     </div>
                                     <h3 className="text-2xl font-black text-slate-800 tracking-tight mb-3 uppercase">IA Procesando</h3>
-                                    <p className="text-slate-400 font-medium max-w-xs text-lg">Extrayendo fonemas y generando hipótesis clínicas de alto nivel...</p>
+                                    {uploadProgress > 0 && uploadProgress < 100 ? (
+                                        <div className="w-full max-w-xs mx-auto mb-4">
+                                            <div className="flex justify-between text-[10px] font-black text-blue-600 uppercase tracking-widest mb-1">
+                                                <span>Subiendo a la nube</span>
+                                                <span>{Math.round(uploadProgress)}%</span>
+                                            </div>
+                                            <div className="w-full bg-blue-100 h-1.5 rounded-full overflow-hidden">
+                                                <motion.div 
+                                                    className="bg-blue-600 h-full"
+                                                    initial={{ width: 0 }}
+                                                    animate={{ width: `${uploadProgress}%` }}
+                                                />
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <p className="text-slate-400 font-medium max-w-xs text-lg">Extrayendo fonemas y optimizando video con FFmpeg...</p>
+                                    )}
                                 </div>
                             </motion.div>
                         )}

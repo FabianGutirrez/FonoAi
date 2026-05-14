@@ -1,12 +1,38 @@
 import express from "express";
 import cors from "cors";
 import multer from "multer";
+import fs from "fs";
+import os from "os";
+import path from "path";
+import { promisify } from "util";
+import ffmpeg from "fluent-ffmpeg";
+import ffmpegPath from "ffmpeg-static";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+
+if (ffmpegPath) {
+  ffmpeg.setFfmpegPath(ffmpegPath);
+}
+
+const writeFile = promisify(fs.writeFile);
+const unlink = promisify(fs.unlink);
+const readFile = promisify(fs.readFile);
+
+async function extractAudio(inputPath: string, outputPath: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    ffmpeg(inputPath)
+      .toFormat("mp3")
+      .audioBitrate("128k")
+      .audioChannels(1)
+      .on("end", () => resolve())
+      .on("error", (err) => reject(err))
+      .save(outputPath);
+  });
+}
 
 const app = express();
 
 const upload = multer({ 
-  limits: { fileSize: 400 * 1024 * 1024 }, // 400MB
+  limits: { fileSize: 1.024 * 1024 * 1024 }, // 1GB
   storage: multer.memoryStorage() 
 });
 
@@ -45,15 +71,14 @@ app.post("/api/transcribe", (req, res, next) => {
 
     const transcriptionPrompt = req.body.prompt || "Transcribe este video exactamente.";
     let videoPart;
+    let buffer: Buffer;
+    let originalMimeType = "string";
 
     if (req.file) {
       console.log("Servidor: Procesando archivo directo (Multer)");
-      videoPart = {
-        inlineData: {
-          data: req.file.buffer.toString("base64"),
-          mimeType: req.file.mimetype || "video/mp4"
-        }
-      };
+      buffer = req.file.buffer;
+      originalMimeType = req.file.mimetype || "video/mp4";
+      
     } else if (req.body.videoUrl) {
       console.log("Servidor: Intentando descargar desde URL:", req.body.videoUrl);
       try {
@@ -62,18 +87,15 @@ app.post("/api/transcribe", (req, res, next) => {
            const fetchErrorText = await fetchResponse.text();
            throw new Error(`Error descargando de Storage (Status ${fetchResponse.status}): ${fetchErrorText}`);
         }
+
+
         
         const arrayBuffer = await fetchResponse.arrayBuffer();
-        const buffer = Buffer.from(arrayBuffer);
+        buffer = Buffer.from(arrayBuffer);
+        originalMimeType = req.body.mimeType || "video/mp4";
         
         console.log(`Servidor: Video descargado exitosamente. Tamaño: ${(buffer.length / 1024 / 1024).toFixed(2)} MB`);
 
-        videoPart = {
-          inlineData: {
-            data: buffer.toString("base64"),
-            mimeType: req.body.mimeType || "video/mp4"
-          }
-        };
       } catch (downloadError) {
         console.error("Error crítico al descargar video de URL:", downloadError);
         return res.status(400).json({ 
@@ -87,6 +109,48 @@ app.post("/api/transcribe", (req, res, next) => {
         error: "No se proporcionó video de forma procesable por el servidor.",
         debug: { has_body: !!req.body, body_keys: Object.keys(req.body) }
       });
+    }
+
+    // OPTIMIZACIÓN: Si es un video, extraemos solo el audio
+    if (originalMimeType.startsWith("video/")) {
+      console.log("Servidor: Optimizando video... extrayendo audio.");
+      const tempDir = os.tmpdir();
+      const inputPath = path.join(tempDir, `input_${Date.now()}${path.extname(originalMimeType) || ".mp4"}`);
+      const outputPath = path.join(tempDir, `output_${Date.now()}.mp3`);
+
+      try {
+        await writeFile(inputPath, buffer);
+        await extractAudio(inputPath, outputPath);
+        const audioBuffer = await readFile(outputPath);
+        
+        videoPart = {
+          inlineData: {
+            data: audioBuffer.toString("base64"),
+            mimeType: "audio/mp3"
+          }
+        };
+        console.log(`Optimización completada. Tamaño reducido: ${(buffer.length / 1024 / 1024).toFixed(2)}MB -> ${(audioBuffer.length / 1024 / 1024).toFixed(2)}MB`);
+      } catch (ffmpegError) {
+        console.error("Fallo FFmpeg (usando original):", ffmpegError);
+        videoPart = {
+          inlineData: {
+            data: buffer.toString("base64"),
+            mimeType: originalMimeType
+          }
+        };
+      } finally {
+        try {
+          if (fs.existsSync(inputPath)) await unlink(inputPath);
+          if (fs.existsSync(outputPath)) await unlink(outputPath);
+        } catch {}
+      }
+    } else {
+      videoPart = {
+        inlineData: {
+          data: buffer.toString("base64"),
+          mimeType: originalMimeType
+        }
+      };
     }
 
     console.log("Servidor: Enviando a Gemini...");
