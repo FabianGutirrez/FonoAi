@@ -8,6 +8,7 @@ import { promisify } from "util";
 import ffmpeg from "fluent-ffmpeg";
 import ffmpegPath from "ffmpeg-static";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleAIFileManager, FileState } from "@google/generative-ai/server";
 
 if (ffmpegPath) {
   ffmpeg.setFfmpegPath(ffmpegPath);
@@ -21,7 +22,7 @@ async function extractAudio(inputPath: string, outputPath: string): Promise<void
   return new Promise((resolve, reject) => {
     ffmpeg(inputPath)
       .toFormat("mp3")
-      .audioBitrate("128k")
+      .audioBitrate("96k")
       .audioChannels(1)
       .on("end", () => resolve())
       .on("error", (err) => reject(err))
@@ -32,19 +33,19 @@ async function extractAudio(inputPath: string, outputPath: string): Promise<void
 const app = express();
 
 const upload = multer({ 
-  limits: { fileSize: 1.024 * 1024 * 1024 }, // 1GB
+  limits: { fileSize: 1024 * 1024 * 1024 }, // 1GB
   storage: multer.memoryStorage() 
 });
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "50mb" }));
 
 // API Routes
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", environment: "vercel" });
 });
 
-// Transcription Endpoint
+// Transcription Endpoint con File API
 app.post("/api/transcribe", (req, res, next) => {
   const contentType = req.headers['content-type'] || '';
   if (contentType.includes('multipart/form-data')) {
@@ -53,6 +54,7 @@ app.post("/api/transcribe", (req, res, next) => {
     next();
   }
 }, async (req: any, res: any) => {
+  const tempFiles: string[] = [];
   try {
     const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY || process.env.GOOGLE_API_KEY;
     
@@ -63,119 +65,100 @@ app.post("/api/transcribe", (req, res, next) => {
       });
     }
 
-    console.log("Servidor: Iniciando proceso de transcripción");
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ 
-      model: "gemini-2.0-flash",
-    });
-
-    const transcriptionPrompt = req.body.prompt || "Transcribe este video exactamente.";
-    let videoPart;
+    console.log("--- Iniciando Proceso Profesional de Transcripción (File API) ---");
     let buffer: Buffer;
-    let originalMimeType = "string";
+    let originalMimeType = "video/mp4";
 
     if (req.file) {
-      console.log("Servidor: Procesando archivo directo (Multer)");
       buffer = req.file.buffer;
       originalMimeType = req.file.mimetype || "video/mp4";
-      
     } else if (req.body.videoUrl) {
-      console.log("Servidor: Intentando descargar desde URL:", req.body.videoUrl);
-      try {
-        const fetchResponse = await fetch(req.body.videoUrl);
-        if (!fetchResponse.ok) {
-           const fetchErrorText = await fetchResponse.text();
-           throw new Error(`Error descargando de Storage (Status ${fetchResponse.status}): ${fetchErrorText}`);
-        }
-
-
-        
-        const arrayBuffer = await fetchResponse.arrayBuffer();
-        buffer = Buffer.from(arrayBuffer);
-        originalMimeType = req.body.mimeType || "video/mp4";
-        
-        console.log(`Servidor: Video descargado exitosamente. Tamaño: ${(buffer.length / 1024 / 1024).toFixed(2)} MB`);
-
-      } catch (downloadError) {
-        console.error("Error crítico al descargar video de URL:", downloadError);
-        return res.status(400).json({ 
-          error: "Error al descargar el video desde Firebase Storage.",
-          details: downloadError instanceof Error ? downloadError.message : String(downloadError)
-        });
-      }
+      console.log("Descargando desde URL externa...");
+      const fetchResponse = await fetch(req.body.videoUrl);
+      if (!fetchResponse.ok) throw new Error("Error bajando de Storage");
+      buffer = Buffer.from(await fetchResponse.arrayBuffer());
+      originalMimeType = req.body.mimeType || "video/mp4";
     } else {
-      console.error("Servidor: No se detectó ni archivo ni URL.");
-      return res.status(400).json({ 
-        error: "No se proporcionó video de forma procesable por el servidor.",
-        debug: { has_body: !!req.body, body_keys: Object.keys(req.body) }
-      });
+      return res.status(400).json({ error: "No se proporcionó video" });
     }
 
-    // OPTIMIZACIÓN: Si es un video, extraemos solo el audio
+    const tempDir = os.tmpdir();
+    const inPath = path.join(tempDir, `api_in_${Date.now()}${path.extname(originalMimeType) || ".mp4"}`);
+    const outPath = path.join(tempDir, `api_out_${Date.now()}.mp3`);
+
+    await writeFile(inPath, buffer);
+    tempFiles.push(inPath);
+
+    let finalPath = inPath;
+    let finalMimeType = originalMimeType;
+
     if (originalMimeType.startsWith("video/")) {
-      console.log("Servidor: Optimizando video... extrayendo audio.");
-      const tempDir = os.tmpdir();
-      const inputPath = path.join(tempDir, `input_${Date.now()}${path.extname(originalMimeType) || ".mp4"}`);
-      const outputPath = path.join(tempDir, `output_${Date.now()}.mp3`);
-
+      console.log("Extrayendo audio para optimizar procesamiento...");
       try {
-        await writeFile(inputPath, buffer);
-        await extractAudio(inputPath, outputPath);
-        const audioBuffer = await readFile(outputPath);
-        
-        videoPart = {
-          inlineData: {
-            data: audioBuffer.toString("base64"),
-            mimeType: "audio/mp3"
-          }
-        };
-        console.log(`Optimización completada. Tamaño reducido: ${(buffer.length / 1024 / 1024).toFixed(2)}MB -> ${(audioBuffer.length / 1024 / 1024).toFixed(2)}MB`);
-      } catch (ffmpegError) {
-        console.error("Fallo FFmpeg (usando original):", ffmpegError);
-        videoPart = {
-          inlineData: {
-            data: buffer.toString("base64"),
-            mimeType: originalMimeType
-          }
-        };
-      } finally {
-        try {
-          if (fs.existsSync(inputPath)) await unlink(inputPath);
-          if (fs.existsSync(outputPath)) await unlink(outputPath);
-        } catch {}
+        await extractAudio(inPath, outPath);
+        finalPath = outPath;
+        finalMimeType = "audio/mp3";
+        tempFiles.push(outPath);
+      } catch (e) {
+        console.warn("Fallo FFmpeg, usando video original.");
       }
-    } else {
-      videoPart = {
-        inlineData: {
-          data: buffer.toString("base64"),
-          mimeType: originalMimeType
-        }
-      };
     }
 
-    console.log("Servidor: Enviando a Gemini...");
-    try {
-      const result = await model.generateContent([
-        transcriptionPrompt,
-        videoPart
-      ]);
-      const response = await result.response;
-      const text = response.text();
-      console.log("Servidor: Respuesta recibida de Gemini.");
-      return res.json({ text });
-    } catch (geminiError: any) {
-      console.error("Error directo de Gemini API:", geminiError);
-      return res.status(400).json({ 
-        error: "Error en la API de Gemini",
-        details: geminiError?.message || String(geminiError)
-      });
-    }
-  } catch (error) {
-    console.error("Error inesperado en /api/transcribe:", error);
-    res.status(500).json({ 
-      error: "Fallo interno en el servidor",
-      details: error instanceof Error ? error.message : String(error)
+    // --- SUBIDA A GOOGLE FILE API ---
+    const fileManager = new GoogleAIFileManager(apiKey);
+    console.log("Subiendo a Google AI File API...");
+    const uploadResult = await fileManager.uploadFile(finalPath, {
+      mimeType: finalMimeType,
+      displayName: "TranscriptionJob",
     });
+
+    // Esperar a que el archivo sea ACTIVE
+    let file = await fileManager.getFile(uploadResult.file.name);
+    let attempts = 0;
+    while (file.state === FileState.PROCESSING && attempts < 20) {
+      await new Promise(r => setTimeout(r, 4000));
+      file = await fileManager.getFile(uploadResult.file.name);
+      attempts++;
+    }
+
+    if (file.state !== FileState.ACTIVE) {
+      throw new Error(`Google no pudo procesar el archivo: ${file.state}`);
+    }
+
+    console.log("Iniciando transcripción con Gemini...");
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+    const prompt = req.body.prompt || "Transcribe exactamente este video de forma profesional.";
+    
+    const result = await model.generateContent([
+      {
+        fileData: {
+          mimeType: file.mimeType,
+          fileUri: file.uri,
+        },
+      },
+      { text: prompt },
+    ]);
+
+    const text = result.response.text();
+    
+    // Limpieza en Google
+    await fileManager.deleteFile(file.name).catch(() => {});
+
+    res.json({ transcription: text, text: text }); // Enviamos ambos por retrocompatibilidad
+
+  } catch (error: any) {
+    console.error("Error crítico en API:", error);
+    res.status(500).json({ 
+      error: error.message || "Error interno del servidor",
+      details: error.message 
+    });
+  } finally {
+    // Limpiar archivos locales
+    for (const f of tempFiles) {
+      if (fs.existsSync(f)) await unlink(f).catch(() => {});
+    }
   }
 });
 
