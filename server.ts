@@ -156,9 +156,23 @@ async function startServer() {
 
       console.log("\nEnviando prompt a Gemini...");
       const genAI = new GoogleGenerativeAI(apiKey);
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" }); // O gemini-2.0-flash si prefieres
+      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash",
+        generationConfig: {
+          temperature: 0,
+          topP: 0.1,
+          topK: 16,
+        },
+      });
+      
 
-      const prompt = req.body.prompt || "Transcribe el audio de este video de forma literal y profesional.";
+      const prompt = req.body.prompt || `Actúa como un transcriptor fonoaudiológico experto. Tu tarea es transcribir el audio de forma estrictamente LITERAL y VERBATIM. 
+NO corrijas la gramática, NO limpies el lenguaje, NO omitas nada. 
+DEBES incluir:
+- Muletillas (eh, este, mmm, ah, etc.)
+- Repeticiones de palabras o sílabas (ej: "pe-pe-perro")
+- Errores de pronunciación o palabras mal articuladas (ej: si el paciente dice una palabra mal, escríbela exactamente como suena)
+- Pausas y vacilaciones.
+La precisión en el ERROR es fundamental para el diagnóstico clínico.`;
       
       const result = await model.generateContent([
         {
