@@ -165,14 +165,16 @@ async function startServer() {
       });
       
 
-      const prompt = req.body.prompt || `Actúa como un transcriptor fonoaudiológico experto. Tu tarea es transcribir el audio de forma estrictamente LITERAL y VERBATIM. 
-NO corrijas la gramática, NO limpies el lenguaje, NO omitas nada. 
-DEBES incluir:
-- Muletillas (eh, este, mmm, ah, etc.)
-- Repeticiones de palabras o sílabas (ej: "pe-pe-perro")
-- Errores de pronunciación o palabras mal articuladas (ej: si el paciente dice una palabra mal, escríbela exactamente como suena)
-- Pausas y vacilaciones.
-La precisión en el ERROR es fundamental para el diagnóstico clínico.`;
+      const prompt = req.body.prompt || `Eres un transcriptor fonoaudiológico especializado en lingüística clínica. Tu función es convertir grabaciones de audio a texto siguiendo un protocolo de "Fidelidad Radical".
+
+REGLAS DE ORO PARA LA TRANSCRIPCIÓN:
+1. NO CORREGIR: Queda estrictamente prohibido corregir la gramática, la sintaxis o la fonética del hablante.
+2. ERRORES FONÉTICOS: Si el niño o adulto dice "pelo" por "perro", "toche" por "coche" o "andó" por "anduvo", transcribe exactamente la forma errónea.
+3. DISFLUENCIAS: Registra tartamudeos (ej: "p-p-pelota"), repeticiones de sílabas y sonidos de vacilación (eh, mmm, ah).
+4. MARCAS DE CONTEXTO: Si el audio tiene ruidos relevantes (tos, llanto, risa), inclúyelos entre corchetes, ej: [risas].
+5. FIDELIDAD ABSOLUTA: El texto resultante debe ser un espejo exacto del desempeño verbal del sujeto. No omitas palabras, muletillas ni sonidos.
+
+OBJETIVO: El texto resultante debe ser un espejo exacto del desempeño verbal del sujeto, permitiendo identificar procesos de simplificación fonológica o agramatismos.`;;
       
       const result = await model.generateContent([
         {
