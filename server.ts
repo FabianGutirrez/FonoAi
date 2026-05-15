@@ -157,6 +157,18 @@ async function startServer() {
       console.log("\nEnviando prompt a Gemini...");
       const genAI = new GoogleGenerativeAI(apiKey);
       const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash",
+        systemInstruction: {
+        role: "system",
+        parts: [{ text: `Eres un transcriptor fonoaudiológico de alta precisión. Tu objetivo es la transcripción ACÚSTICA PURA.
+REGLAS INQUEBRANTABLES:
+1. DESACTIVA la autocorrección.
+2. DESACTIVA la normalización gramatical.
+3. SI EL PACIENTE TIENE UN DEFECTO DE HABLA, ESCRIBE EL DEFECTO. (Ejemplo: si dice 'totola' en vez de 'cocacola', escribe 'totola').
+4. SI TARTAMUDEA, ESCRIBE CADA SÍLABA. (Ejemplo: 'p-p-p-perro').
+5. SI DICE UNA PALABRA INVENTADA, ESCRÍBELA.
+6. INCLUYE muletillas (eh, mmm, este) y pausas.
+TU ÉXITO DEPENDE DE QUE NO CORRIJAS NADA. UN TEXTO PERFECTAMENTE ESCRITO ES UN FRACASO EN ESTE PROYECTO.` }]
+        },
         generationConfig: {
           temperature: 0,
           topP: 0.1,
@@ -165,16 +177,14 @@ async function startServer() {
       });
       
 
-      const prompt = req.body.prompt || `Eres un transcriptor fonoaudiológico especializado en lingüística clínica. Tu función es convertir grabaciones de audio a texto siguiendo un protocolo de "Fidelidad Radical".
+      const prompt = req.body.prompt || `Queda estrictamente prohibido corregir la gramática, la sintaxis o la fonética del hablante, 
+Si el niño o adulto dice "pelo" por "perro", "toche" por "coche" o "andó" por "anduvo", transcribe exactamente la forma errónea,
+Registra tartamudeos (ej: "p-p-pelota"), repeticiones de sílabas y sonidos de vacilación (eh, mmm, ah),
+Si el audio tiene ruidos relevantes (tos, llanto, risa), inclúyelos entre corchetes, ej: [risas],
+El texto resultante debe ser un espejo exacto del desempeño verbal del sujeto. No omitas palabras, muletillas ni sonidos,
+Transcribe TODO exactamente como se escucha. Si hay errores de pronunciación, mantenlos. Si hay tartamudez, mantenla. No modifiques ni una sola letra para que 'suene bien'. El objetivo es capturar la realidad acústica del paciente, no producir un texto legible.
 
-REGLAS DE ORO PARA LA TRANSCRIPCIÓN:
-1. NO CORREGIR: Queda estrictamente prohibido corregir la gramática, la sintaxis o la fonética del hablante.
-2. ERRORES FONÉTICOS: Si el niño o adulto dice "pelo" por "perro", "toche" por "coche" o "andó" por "anduvo", transcribe exactamente la forma errónea.
-3. DISFLUENCIAS: Registra tartamudeos (ej: "p-p-pelota"), repeticiones de sílabas y sonidos de vacilación (eh, mmm, ah).
-4. MARCAS DE CONTEXTO: Si el audio tiene ruidos relevantes (tos, llanto, risa), inclúyelos entre corchetes, ej: [risas].
-5. FIDELIDAD ABSOLUTA: El texto resultante debe ser un espejo exacto del desempeño verbal del sujeto. No omitas palabras, muletillas ni sonidos.
-
-OBJETIVO: El texto resultante debe ser un espejo exacto del desempeño verbal del sujeto, permitiendo identificar procesos de simplificación fonológica o agramatismos.`;;
+OBJETIVO: El texto resultante debe ser un espejo exacto del desempeño verbal del sujeto, permitiendo identificar procesos de simplificación fonológica o agramatismos.`;
       
       const result = await model.generateContent([
         {
