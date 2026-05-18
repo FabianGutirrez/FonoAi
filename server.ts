@@ -29,7 +29,9 @@ async function extractAudio(inputSource: string | Buffer, outputPath: string): P
     
     command
       .toFormat("mp3")
-      .audioBitrate("96k")
+      .audioCodec("libmp3lame")
+      .audioBitrate("192k")
+      .audioFrequency(16000)
       .audioChannels(1)
       .on("start", (cmd) => console.log("FFmpeg iniciado:", cmd))
       .on("end", () => resolve())
@@ -154,46 +156,77 @@ async function startServer() {
         throw new Error(`Google no pudo procesar el archivo: ${file.state}`);
       }
 
-      console.log("\nEnviando prompt a Gemini...");
+      console.log("\nEnviando prompt a Gemini (Modo Clínico Estricto)...");
       const genAI = new GoogleGenerativeAI(apiKey);
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash",
-        systemInstruction: {
-        role: "system",
-        parts: [{ text: `Eres un transcriptor fonoaudiológico de alta precisión. Tu objetivo es la transcripción ACÚSTICA PURA.
-REGLAS INQUEBRANTABLES:
-1. DESACTIVA la autocorrección.
-2. DESACTIVA la normalización gramatical.
-3. SI EL PACIENTE TIENE UN DEFECTO DE HABLA, ESCRIBE EL DEFECTO. (Ejemplo: si dice 'totola' en vez de 'cocacola', escribe 'totola').
-4. SI TARTAMUDEA, ESCRIBE CADA SÍLABA. (Ejemplo: 'p-p-p-perro').
-5. SI DICE UNA PALABRA INVENTADA, ESCRÍBELA.
-6. INCLUYE muletillas (eh, mmm, este) y pausas.
-TU ÉXITO DEPENDE DE QUE NO CORRIJAS NADA. UN TEXTO PERFECTAMENTE ESCRITO ES UN FRACASO EN ESTE PROYECTO.` }]
-        },
+      const model = genAI.getGenerativeModel({ 
+        model: "gemini-2.0-flash",
         generationConfig: {
           temperature: 0,
-          topP: 0.1,
-          topK: 16,
+          topP: 0,
+          topK: 1,
         },
       });
       
+      const strongPrompt = `TRANSCRIPCIÓN FONOAUDIOLÓGICA CLÍNICA — MODO VERBATIM ESTRICTO
 
-      const prompt = req.body.prompt || `Queda estrictamente prohibido corregir la gramática, la sintaxis o la fonética del hablante, 
-Si el niño o adulto dice "pelo" por "perro", "toche" por "coche" o "andó" por "anduvo", transcribe exactamente la forma errónea,
-Registra tartamudeos (ej: "p-p-pelota"), repeticiones de sílabas y sonidos de vacilación (eh, mmm, ah),
-Si el audio tiene ruidos relevantes (tos, llanto, risa), inclúyelos entre corchetes, ej: [risas],
-El texto resultante debe ser un espejo exacto del desempeño verbal del sujeto. No omitas palabras, muletillas ni sonidos,
-Transcribe TODO exactamente como se escucha. Si hay errores de pronunciación, mantenlos. Si hay tartamudez, mantenla. No modifiques ni una sola letra para que 'suene bien'. El objetivo es capturar la realidad acústica del paciente, no producir un texto legible.
+Tu única tarea es transcribir EXACTAMENTE lo que se escucha.
 
-OBJETIVO: El texto resultante debe ser un espejo exacto del desempeño verbal del sujeto, permitiendo identificar procesos de simplificación fonológica o agramatismos.`;
+NO debes interpretar.
+NO debes corregir.
+NO debes mejorar.
+NO debes normalizar.
+
+REGLAS OBLIGATORIAS:
+
+1. Si el paciente pronuncia mal una palabra, debes escribirla MAL exactamente como suena.
+
+Ejemplo:
+si dice:
+"yo quielo la totola"
+
+debes escribir:
+"yo quielo la totola"
+
+NO:
+"yo quiero la cocacola"
+
+2. Si hay tartamudeo, debes escribir cada repetición.
+
+Ejemplo:
+"p-p-p-perro"
+
+3. Si hay pausas largas: 
+usa [pausa]
+
+4. Si hay ruidos:
+usa [tos], [risa], [llanto], [silencio]
+
+5. Si no entiendes:
+usa [inaudible]
+
+6. Debes conservar:
+- muletillas 
+- repeticiones
+- errores fonológicos
+- errores morfosintácticos
+- simplificaciones fonológicas
+- autocorrecciones
+- bloqueos verbales
+
+7. Un texto bien escrito significa ERROR.
+
+8. Tu éxito depende de NO corregir absolutamente nada.
+
+RESPONDE SOLO CON LA TRANSCRIPCIÓN.`;
       
       const result = await model.generateContent([
+        { text: strongPrompt },
         {
           fileData: {
             mimeType: file.mimeType,
             fileUri: file.uri,
           },
-        },
-        { text: prompt },
+        }
       ]);
 
       const text = result.response.text();
@@ -201,7 +234,8 @@ OBJETIVO: El texto resultante debe ser un espejo exacto del desempeño verbal de
       // Limpieza en Google
       await fileManager.deleteFile(file.name).catch(() => {});
 
-      res.json({ text });
+      console.log("Servidor: Transcripción completada exitosamente.");
+      res.json({ transcription: text, text: text });
 
     } catch (error: any) {
       console.error("Error crítico:", error);
@@ -229,7 +263,7 @@ OBJETIVO: El texto resultante debe ser un espejo exacto del desempeño verbal de
       }
 
       const genAI = new GoogleGenerativeAI(apiKey);
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
       const result = await model.generateContent(prompt);
       const response = await result.response;
@@ -261,11 +295,14 @@ OBJETIVO: El texto resultante debe ser un espejo exacto del desempeño verbal de
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Servidor iniciado en http://localhost:${PORT}`);
-  });
+  if (!process.env.VERCEL) {
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`Servidor iniciado en http://localhost:${PORT}`);
+    });
+  }
+  return app;
 }
 
-startServer().catch((err) => {
-  console.error("Fallo al iniciar el servidor:", err);
-});
+const appPromise = startServer();
+
+export default appPromise;
