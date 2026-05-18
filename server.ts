@@ -12,8 +12,6 @@ import ffmpegPath from "ffmpeg-static";
 import { fileURLToPath } from "url";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { GoogleAIFileManager, FileState } from "@google/generative-ai/server";
-import { createServer as createViteServer } from "vite";
-
 if (ffmpegPath) {
   ffmpeg.setFfmpegPath(ffmpegPath);
 }
@@ -281,6 +279,7 @@ RESPONDE SOLO CON LA TRANSCRIPCIÓN.`;
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
