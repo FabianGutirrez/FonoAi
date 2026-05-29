@@ -1,5 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
-import { getApiKey } from "../utils/apiKey";
+import { getApiKey } from "../utils/apiKey.js";
 
 export function getGeminiClient(): GoogleGenAI {
   const apiKey = getApiKey();
@@ -21,7 +21,9 @@ export async function uploadToGoogleAI(filePath: string, mimeType: string) {
   console.log(`Subiendo archivo de audio/video a Google AI con MimeType: ${mimeType}`);
   return await ai.files.upload({
     file: filePath,
-    mimeType: mimeType,
+    config: {
+      mimeType: mimeType,
+    },
   });
 }
 

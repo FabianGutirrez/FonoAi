@@ -6,7 +6,7 @@ import os from "os";
 import { promisify } from "util";
 import { Readable } from "stream";
 
-import { getApiKey } from "../utils/apiKey";
+import { getApiKey } from "../utils/apiKey.js";
 import { CLINICAL_PROMPT, ADVANCED_PROMPT_TEMPLATE } from "../services/prompts";
 import { checkIfFfmpegAvailable, extractAudio } from "../services/ffmpeg";
 import { 
@@ -191,7 +191,12 @@ router.post("/api/transcribe", (req, res, next) => {
 
     // --- SUBIDA A GOOGLE FILE API ---
     const fileUpload = await uploadToGoogleAI(finalPath, finalMimeType);
-    const fileName = fileUpload.name;
+    const fileName = fileUpload?.name as string | undefined;
+    const fileUri = fileUpload?.uri as string | undefined;
+
+    if (!fileName || !fileUri) {
+      throw new Error("No se recibió información válida del archivo subido a Google AI.");
+    }
 
     sendProgress("waiting_active", { message: "Google AI: Procesando segmentación y códec..." });
 
@@ -251,7 +256,7 @@ router.post("/api/transcribe", (req, res, next) => {
               {
                 fileData: {
                   mimeType: finalMimeType,
-                  fileUri: fileUpload.uri,
+                  fileUri: fileUri,
                 },
               }
             ],
@@ -400,7 +405,7 @@ router.post("/api/transcribe", (req, res, next) => {
           {
             fileData: {
               mimeType: finalMimeType,
-              fileUri: fileUpload.uri,
+              fileUri: fileUri,
             },
           }
         ],
@@ -452,7 +457,7 @@ router.post("/api/transcribe", (req, res, next) => {
           {
             fileData: {
               mimeType: finalMimeType,
-              fileUri: fileUpload.uri,
+              fileUri: fileUri,
             },
           }
         ],

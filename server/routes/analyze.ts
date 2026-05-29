@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { getGeminiClient } from "../services/gemini";
-import { getApiKey } from "../utils/apiKey";
+import { getApiKey } from "../utils/apiKey.js";
 
 const router = Router();
 
