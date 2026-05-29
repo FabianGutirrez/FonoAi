@@ -7,8 +7,8 @@ import { promisify } from "util";
 import { Readable } from "stream";
 
 import { getApiKey } from "../utils/apiKey.js";
-import { CLINICAL_PROMPT, ADVANCED_PROMPT_TEMPLATE } from "../services/prompts";
-import { checkIfFfmpegAvailable, extractAudio } from "../services/ffmpeg";
+import { CLINICAL_PROMPT, ADVANCED_PROMPT_TEMPLATE } from "../services/prompts.js";
+import { checkIfFfmpegAvailable, extractAudio } from "../services/ffmpeg.js";
 import { 
   getGeminiClient, 
   uploadToGoogleAI, 
