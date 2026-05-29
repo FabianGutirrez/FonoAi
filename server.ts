@@ -3,8 +3,8 @@ import path from "path";
 import cors from "cors";
 
 // Importar rutas modularizadas
-import transcribeRouter from "./server/routes/transcribe";
-import analyzeRouter from "./server/routes/analyze";
+import transcribeRouter from "./server/routes/transcribe.js";
+import analyzeRouter from "./server/routes/analyze.js";
 
 async function startServer() {
   const app = express();
