@@ -61,8 +61,9 @@ router.post("/api/transcribe", (req, res, next) => {
 
   if (isStream) {
     res.setHeader("Content-Type", "text/event-stream");
-    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Cache-Control", "no-cache, no-transform");
     res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
     res.flushHeaders?.();
   }
 
@@ -187,22 +188,42 @@ router.post("/api/transcribe", (req, res, next) => {
       }
     }
 
-    sendProgress("uploading_google_ai", { message: "Canal de Seguridad: Subiendo grabación a Google AI..." });
+    const stats = fs.statSync(finalPath);
+    const fileSizeMB = stats.size / (1024 * 1024);
+    const useInlineData = fileSizeMB < 18;
 
-    // --- SUBIDA A GOOGLE FILE API ---
-    const fileUpload = await uploadToGoogleAI(finalPath, finalMimeType);
-    const fileName = fileUpload?.name as string | undefined;
-    const fileUri = fileUpload?.uri as string | undefined;
+    let fileUpload: any = null;
+    let fileName = "";
+    let inlineDataPart: any = null;
 
-    if (!fileName || !fileUri) {
-      throw new Error("No se recibió información válida del archivo subido a Google AI.");
-    }
+    if (useInlineData) {
+      console.log(`[INFO] Optimizando con inlineData (tamaño del archivo: ${fileSizeMB.toFixed(2)} MB < 18 MB). Evitaremos polling largo de Google AI.`);
+      const fileBuffer = await readFile(finalPath);
+      inlineDataPart = {
+        inlineData: {
+          mimeType: finalMimeType,
+          data: fileBuffer.toString("base64"),
+        }
+      };
+      
+      // Simulamos pasos rápidos de progreso para mantener la sincronización visual de la UI
+      sendProgress("uploading_google_ai", { message: "Transmisión optimizada: Subiendo por canal rápido..." });
+      await new Promise(r => setTimeout(r, 600));
+      sendProgress("waiting_active", { message: "Transmisión optimizada: Procesamiento instantáneo..." });
+      await new Promise(r => setTimeout(r, 600));
+    } else {
+      sendProgress("uploading_google_ai", { message: "Canal de Seguridad: Subiendo grabación a Google AI..." });
 
-    sendProgress("waiting_active", { message: "Google AI: Procesando segmentación y códec..." });
+      // --- SUBIDA A GOOGLE FILE API ---
+      fileUpload = await uploadToGoogleAI(finalPath, finalMimeType);
+      fileName = fileUpload.name;
 
-    const isActive = await waitForFileActive(fileName);
-    if (!isActive) {
-      throw new Error("Google AI no pudo procesar el archivo o la subida demoró demasiado.");
+      sendProgress("waiting_active", { message: "Google AI: Procesando segmentación y códec..." });
+
+      const isActive = await waitForFileActive(fileName);
+      if (!isActive) {
+        throw new Error("Google AI no pudo procesar el archivo o la subida demoró demasiado.");
+      }
     }
 
     sendProgress("transcribing", { message: "WhisperX / Gemini: Traduciendo fonética cruda del paciente..." });
@@ -249,16 +270,18 @@ router.post("/api/transcribe", (req, res, next) => {
           const ai = getGeminiClient();
           const strongPrompt = CLINICAL_PROMPT;
 
+          const mediaPart = useInlineData ? inlineDataPart : {
+            fileData: {
+              mimeType: finalMimeType,
+              fileUri: fileUpload?.uri,
+            },
+          };
+
           const realTxRes = await ai.models.generateContent({
             model: "gemini-3.5-flash",
             contents: [
               { text: strongPrompt },
-              {
-                fileData: {
-                  mimeType: finalMimeType,
-                  fileUri: fileUri,
-                },
-              }
+              mediaPart
             ],
             config: {
               temperature: 0,
@@ -398,16 +421,18 @@ router.post("/api/transcribe", (req, res, next) => {
         .replace("%%PHONEME_ALIGNMENTS%%", phonemeAlignments.map((pa: any) => `Palabra "${pa.word}": ${pa.phonemes.map((ph: any) => `/${ph.phone}/(score:${ph.score})`).join(" ")}`).join("\n"));
 
       const ai = getGeminiClient();
+      const mediaPart = useInlineData ? inlineDataPart : {
+        fileData: {
+          mimeType: finalMimeType,
+          fileUri: fileUpload?.uri,
+        },
+      };
+
       const response = await ai.models.generateContent({
         model: "gemini-3.5-flash",
         contents: [
           { text: acousticPrompt },
-          {
-            fileData: {
-              mimeType: finalMimeType,
-              fileUri: fileUri,
-            },
-          }
+          mediaPart
         ],
         config: {
           temperature: 0.1,
@@ -418,7 +443,9 @@ router.post("/api/transcribe", (req, res, next) => {
 
       const analysisText = response.text || "";
 
-      await deleteFileFromGoogleAI(fileName);
+      if (!useInlineData && fileName) {
+        await deleteFileFromGoogleAI(fileName);
+      }
 
       console.log("Servidor: Transcripción y Análisis Acústico con Gemini completado.");
 
@@ -450,16 +477,18 @@ router.post("/api/transcribe", (req, res, next) => {
       const ai = getGeminiClient();
       const strongPrompt = CLINICAL_PROMPT;
       
+      const mediaPart = useInlineData ? inlineDataPart : {
+        fileData: {
+          mimeType: finalMimeType,
+          fileUri: fileUpload?.uri,
+        },
+      };
+
       const response = await ai.models.generateContent({
         model: "gemini-3.5-flash",
         contents: [
           { text: strongPrompt },
-          {
-            fileData: {
-              mimeType: finalMimeType,
-              fileUri: fileUri,
-            },
-          }
+          mediaPart
         ],
         config: {
           temperature: 0,
@@ -470,7 +499,9 @@ router.post("/api/transcribe", (req, res, next) => {
 
       const text = response.text || "";
       
-      await deleteFileFromGoogleAI(fileName);
+      if (!useInlineData && fileName) {
+        await deleteFileFromGoogleAI(fileName);
+      }
 
       console.log("Servidor: Transcripción completada exitosamente.");
 
