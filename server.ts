@@ -3,8 +3,8 @@ import path from "path";
 import cors from "cors";
 
 // Importar rutas modularizadas
-import transcribeRouter from "./server/routes/transcribe";
-import analyzeRouter from "./server/routes/analyze";
+import transcribeRouter from "./server/routes/transcribe.js";
+import analyzeRouter from "./server/routes/analyze.js";
 
 async function startServer() {
   const app = express();
@@ -33,13 +33,14 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
-    app.get("*all", (req, res) => {
+    app.get("*", (req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
 
   // Escuchar únicamente en el puerto si no es Vercel sin servidor
   if (!process.env.VERCEL) {
+    const PORT = Number(process.env.PORT) || 3000;
     app.listen(PORT, "0.0.0.0", () => {
       console.log(`[Clinica Server] Servidor iniciado satisfactoriamente en http://localhost:${PORT}`);
     });
