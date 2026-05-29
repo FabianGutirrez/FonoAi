@@ -14,7 +14,7 @@ import {
   uploadToGoogleAI, 
   waitForFileActive, 
   deleteFileFromGoogleAI 
-} from "../services/gemini";
+} from "../services/gemini.js";
 
 const writeFile = promisify(fs.writeFile);
 const unlink = promisify(fs.unlink);
