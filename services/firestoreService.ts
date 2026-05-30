@@ -150,6 +150,10 @@ export const updateEvaluation = async (id: string, updates: Partial<Evaluation>)
   const path = `evaluations/${id}`;
   try {
     const cleansed = cleanUndefined(updates);
+
+    console.log("UPDATE DATA:", cleansed);
+
+
     await setDoc(doc(db, path), {
       ...cleansed,
       updatedAt: serverTimestamp(),
